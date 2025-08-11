@@ -65,7 +65,7 @@ class RAGPipeline:
 give a comprehensive answer to the question.
 Respond only to the question asked, response should be concise and relevant to the question.
 Provide the number of the source document when relevant.
-If the answer cannot be deduced from the context, do not give an answer.
+If the answer cannot be deduced from the context, answer with "no relevant context"
 
 ## RETRIEVED CONTEXT:
 {context}
@@ -87,7 +87,7 @@ If the answer cannot be deduced from the context, do not give an answer.
             augmented_prompt = state["augmented_prompt"]
             response = self.gemini_model.generate_content(augmented_prompt)
             
-            state["final_response"] = response.text
+            state["final_response"] = response.text 
             return state
         except Exception as e:
             state["error"] = f"Generation error: {str(e)}"

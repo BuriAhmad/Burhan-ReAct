@@ -21,7 +21,6 @@ together
 langchain-together
 langchain_community
 pymongo[srv]==3.12
-
-# New dependencies for RAG functionality
 langgraph==0.0.69
 numpy==1.24.3
+PyPDF2==3.0.1
