@@ -4,12 +4,9 @@ gradio==4.7.1
 google-generativeai==0.3.2
 python-multipart==0.0.6
 requests==2.31.0
-
 torch==2.1
 transformers==4.34.0
 ctransformers
-gradio
-fastapi
 python-dotenv
 langchain
 chromadb
@@ -24,3 +21,4 @@ pymongo[srv]==3.12
 langgraph==0.0.69
 numpy==1.24.3
 PyPDF2==3.0.1
+tavily-python==0.5.0

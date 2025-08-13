@@ -18,6 +18,9 @@ class RAGState(TypedDict):
     web_documents: List[Dict] 
     llm_says_sufficient: bool
     web_search_performed: bool
+    
+    # Chat history field
+    chat_history_context: str
 
 class RAGPipeline:
     def __init__(self, gemini_model, tavily_api_key: str = None):
@@ -89,6 +92,7 @@ class RAGPipeline:
         try:
             user_query = state["user_query"]
             local_docs = state["local_documents"]
+            chat_history = state.get("chat_history_context", "")
             
             if not local_docs:
                 state["llm_says_sufficient"] = False
@@ -101,8 +105,13 @@ class RAGPipeline:
                 content = doc.get("content", "")
                 docs_text += f"Document {i} - {title}:\n{content}\n\n"
             
+            # Include chat history in evaluation if available
+            context_prefix = ""
+            if chat_history:
+                context_prefix = f"Considering the conversation history:\n{chat_history}\n\n"
+            
             # Simple evaluation prompt
-            evaluation_prompt = f"""Query: {user_query}
+            evaluation_prompt = f"""{context_prefix}Query: {user_query}
 
 Available Documents:
 {docs_text}
@@ -192,10 +201,11 @@ Respond with only "Yes" or "No" - nothing else."""
             return state
     
     def _augment_prompt(self, state: RAGState) -> RAGState:
-        """Create augmented prompt with context (original implementation enhanced)"""
+        """Create augmented prompt with context and chat history"""
         try:
             user_query = state["user_query"]
             retrieved_docs = state["retrieved_documents"]
+            chat_history = state.get("chat_history_context", "")
             
             # Format documents with source attribution
             context = ""
@@ -211,10 +221,19 @@ Respond with only "Yes" or "No" - nothing else."""
                     url = doc.get("url", "")
                     context += f"\n--- Web Document {i}: {title}\nURL: {url} ---\n{content}\n"
             
+            # Include chat history if available
+            history_section = ""
+            if chat_history:
+                history_section = f"""## CONVERSATION HISTORY:
+{chat_history}
+
+"""
+            
             # Create augmented prompt
-            augmented_prompt = f"""Using the information contained in the context,
+            augmented_prompt = f"""{history_section}Using the information contained in the context and considering the conversation history,
 give a comprehensive answer to the question.
 Respond only to the question asked, response should be concise and relevant to the question.
+Maintain conversation continuity and refer to previous exchanges when relevant.
 Provide the number of the source document when relevant.
 If the answer cannot be deduced from the context, answer with "no relevant context"
 
@@ -233,7 +252,7 @@ If the answer cannot be deduced from the context, answer with "no relevant conte
             return state
     
     def _generate_response(self, state: RAGState) -> RAGState:
-        """Generate response using Gemini (original implementation)"""
+        """Generate response using Gemini"""
         try:
             augmented_prompt = state["augmented_prompt"]
             response = self.gemini_model.generate_content(augmented_prompt)
@@ -244,8 +263,8 @@ If the answer cannot be deduced from the context, answer with "no relevant conte
             state["error"] = f"Generation error: {str(e)}"
             return state
     
-    def run(self, user_query: str) -> Dict:
-        """Run the complete RAG pipeline (same interface as before)"""
+    def run(self, user_query: str, chat_history_context: str = "") -> Dict:
+        """Run the complete RAG pipeline with chat history"""
         initial_state = {
             # Original fields
             "user_query": user_query,
@@ -258,7 +277,10 @@ If the answer cannot be deduced from the context, answer with "no relevant conte
             "local_documents": [],
             "web_documents": [],
             "llm_says_sufficient": False,
-            "web_search_performed": False
+            "web_search_performed": False,
+            
+            # Chat history
+            "chat_history_context": chat_history_context
         }
         
         try:
