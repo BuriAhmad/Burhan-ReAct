@@ -8,6 +8,7 @@ from vector_store import VectorStore
 
 # Configure Gemini API
 GEMINI_API_KEY = "AIzaSyAfBQ_-bI2qhiyhXo2UhWQBCtD--y7rJHs"
+TAVILY_API_KEY = "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"
 genai.configure(api_key=GEMINI_API_KEY)
 
 # Initialize FastAPI app
@@ -17,7 +18,7 @@ app = FastAPI(title="RAG Server", description="FastAPI server with RAG functiona
 model = genai.GenerativeModel('gemini-2.0-flash')
 
 # Initialize RAG pipeline
-rag_pipeline = RAGPipeline(model)
+rag_pipeline = RAGPipeline(model, tavily_api_key=TAVILY_API_KEY)
 
 # Initialize PDF processor and vector store
 pdf_processor = PDFProcessor()

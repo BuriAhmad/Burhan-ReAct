@@ -54,7 +54,7 @@ def rag_search_and_generate(query, max_results=3):
 
 # Example usage
 if __name__ == "__main__":
-    query = "who is Dr Waqar Ahmed from lums?"
+    query = "who is Waqar Ahmed from assistant professor at lums?"
     result = rag_search_and_generate(query)
     
     print("=" * 50)
