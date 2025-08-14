@@ -17,7 +17,7 @@ def run_gradio_ui():
     return subprocess.Popen([sys.executable, "gradio_ui.py"])
 
 if __name__ == "__main__":
-    print("🤖 Starting RAG Application with Chat History...")
+    print("🤖 Starting RAG Application with Multi-Session Support...")
     print("=" * 50)
     
     # Start FastAPI server
@@ -34,8 +34,11 @@ if __name__ == "__main__":
     print("✅ Both servers are starting up!")
     print("📍 FastAPI Server: http://127.0.0.1:8000")
     print("📍 Gradio UI: http://127.0.0.1:7860")
-    print("\n💬 Chat history will be preserved across sessions")
-    print("🗑️ Use 'Clear History' button to reset conversation")
+    print("\n🎯 Features:")
+    print("  • Multiple independent chat sessions")
+    print("  • Persistent history for each session")
+    print("  • Context-aware responses (last 5 exchanges)")
+    print("  • Session management (create/switch/delete)")
     print("\nPress Ctrl+C to stop both servers")
     print("=" * 50)
     

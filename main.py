@@ -6,7 +6,7 @@ from rag_pipeline import RAGPipeline
 from pdf_processor import PDFProcessor
 from vector_store import VectorStore
 from chat_history import ChatHistory
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 
 # Configure Gemini API
 GEMINI_API_KEY = "AIzaSyAfBQ_-bI2qhiyhXo2UhWQBCtD--y7rJHs"
@@ -36,6 +36,7 @@ chat_history = ChatHistory(MONGODB_URI, DATABASE_NAME)
 # Request/Response models
 class QueryRequest(BaseModel):
     message: str
+    session_id: str
 
 class QueryResponse(BaseModel):
     response: str
@@ -47,10 +48,25 @@ class ChatResponse(BaseModel):
     status: str
     chat_history: List[List[str]]
     retrieved_docs_count: int = 0
+    session_id: str
 
-class SimpleQueryResponse(BaseModel):
-    response: str
+class CreateSessionRequest(BaseModel):
+    session_name: str
+
+class SessionInfo(BaseModel):
+    session_id: str
+    display_name: str
+    last_updated: str
+    message_count: int
+
+class SessionListResponse(BaseModel):
+    sessions: List[SessionInfo]
     status: str
+
+class ChatHistoryResponse(BaseModel):
+    chat_history: List[List[str]]
+    status: str
+    session_id: str
 
 class UploadResponse(BaseModel):
     status: str
@@ -59,13 +75,64 @@ class UploadResponse(BaseModel):
     chunks_created: int = 0
     processing_time: str = ""
 
-class ChatHistoryResponse(BaseModel):
-    chat_history: List[List[str]]
-    status: str
-
 @app.get("/")
 async def root():
     return {"message": "RAG Server is running!", "status": "healthy"}
+
+@app.post("/create-session")
+async def create_session(request: CreateSessionRequest):
+    """Create a new chat session"""
+    try:
+        # Validate session name
+        if not request.session_name or len(request.session_name.strip()) == 0:
+            raise HTTPException(status_code=400, detail="Session name cannot be empty")
+        
+        # Remove special characters and limit length
+        clean_name = "".join(c for c in request.session_name if c.isalnum() or c in ['_', '-', ' '])
+        clean_name = clean_name.replace(' ', '_').lower()[:30]
+        
+        if not clean_name:
+            raise HTTPException(status_code=400, detail="Invalid session name")
+        
+        result = chat_history.create_session(clean_name)
+        
+        if result["success"]:
+            return {
+                "status": "success",
+                "session_id": result["session_id"],
+                "display_name": result["display_name"]
+            }
+        else:
+            raise HTTPException(status_code=500, detail=result.get("error", "Failed to create session"))
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error creating session: {str(e)}")
+
+@app.get("/list-sessions", response_model=SessionListResponse)
+async def list_sessions():
+    """List all available chat sessions"""
+    try:
+        sessions = chat_history.list_sessions()
+        return SessionListResponse(
+            sessions=[SessionInfo(**s) for s in sessions],
+            status="success"
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error listing sessions: {str(e)}")
+
+@app.delete("/delete-session/{session_id}")
+async def delete_session(session_id: str):
+    """Delete a specific chat session"""
+    try:
+        success = chat_history.delete_session(session_id)
+        if success:
+            return {"status": "success", "message": f"Session {session_id} deleted"}
+        else:
+            return {"status": "error", "message": "Session not found or could not be deleted"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error deleting session: {str(e)}")
 
 @app.post("/upload-pdf", response_model=UploadResponse)
 async def upload_pdf(file: UploadFile = File(...)):
@@ -115,83 +182,83 @@ async def upload_pdf(file: UploadFile = File(...)):
 async def chat_with_rag(request: QueryRequest):
     """Main chat endpoint with RAG functionality and chat history"""
     try:
-        # Get chat history context
-        history_context = chat_history.format_history_for_context(limit=5)
+        # Validate session_id
+        if not request.session_id:
+            raise HTTPException(status_code=400, detail="Session ID is required")
+        
+        # Get chat history context for this session
+        history_context = chat_history.format_history_for_context(request.session_id, limit=5)
         
         # Run RAG pipeline with history context
         result = rag_pipeline.run(request.message, chat_history_context=history_context)
         
-        # Save the new exchange to history
-        chat_history.add_message(request.message, result["response"])
+        # Save the new exchange to history for this session
+        chat_history.add_message(request.message, result["response"], request.session_id)
         
-        # Get full history for UI
-        full_history = chat_history.get_full_history()
+        # Get full history for UI for this session
+        full_history = chat_history.get_full_history(request.session_id)
         
         return ChatResponse(
             response=result["response"],
             status=result["status"],
             chat_history=full_history,
-            retrieved_docs_count=result["retrieved_docs_count"]
+            retrieved_docs_count=result["retrieved_docs_count"],
+            session_id=request.session_id
         )
     
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error in RAG pipeline: {str(e)}")
 
-@app.get("/chat-history", response_model=ChatHistoryResponse)
-async def get_chat_history():
-    """Get full chat history"""
+@app.get("/chat-history/{session_id}", response_model=ChatHistoryResponse)
+async def get_chat_history(session_id: str):
+    """Get full chat history for a specific session"""
     try:
-        history = chat_history.get_full_history()
+        if not chat_history.session_exists(session_id):
+            raise HTTPException(status_code=404, detail="Session not found")
+        
+        history = chat_history.get_full_history(session_id)
         return ChatHistoryResponse(
             chat_history=history,
-            status="success"
+            status="success",
+            session_id=session_id
         )
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error retrieving chat history: {str(e)}")
 
-@app.delete("/chat-history")
-async def clear_chat_history():
-    """Clear chat history"""
+@app.delete("/chat-history/{session_id}")
+async def clear_chat_history(session_id: str):
+    """Clear chat history for a specific session"""
     try:
-        success = chat_history.clear_history()
+        if not chat_history.session_exists(session_id):
+            raise HTTPException(status_code=404, detail="Session not found")
+        
+        success = chat_history.clear_history(session_id)
         if success:
-            return {"status": "success", "message": "Chat history cleared"}
+            return {"status": "success", "message": f"Chat history cleared for session {session_id}"}
         else:
             return {"status": "error", "message": "Failed to clear chat history"}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error clearing chat history: {str(e)}")
 
-@app.post("/chat-simple", response_model=SimpleQueryResponse)
-async def chat_simple(request: QueryRequest):
-    """Simple chat endpoint without RAG (direct Gemini)"""
+@app.get("/session-info/{session_id}")
+async def get_session_info(session_id: str):
+    """Get information about a specific session"""
     try:
-        # Generate response using Gemini directly
-        response = model.generate_content(request.message)
-        
-        return SimpleQueryResponse(
-            response=response.text,
-            status="success"
-        )
-    
+        info = chat_history.get_session_info(session_id)
+        if info:
+            return info
+        else:
+            raise HTTPException(status_code=404, detail="Session not found")
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error generating response: {str(e)}")
-
-@app.post("/query")
-async def query_gemini(request: QueryRequest):
-    """Alternative endpoint for querying with RAG"""
-    try:
-        # Get chat history context
-        history_context = chat_history.format_history_for_context(limit=5)
-        
-        result = rag_pipeline.run(request.message, chat_history_context=history_context)
-        return {
-            "query": request.message,
-            "response": result["response"],
-            "status": result["status"],
-            "retrieved_docs_count": result["retrieved_docs_count"]
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error getting session info: {str(e)}")
 
 # Cleanup on shutdown
 @app.on_event("shutdown")
