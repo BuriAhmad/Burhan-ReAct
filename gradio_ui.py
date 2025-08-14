@@ -3,9 +3,18 @@ import requests
 import json
 from typing import List, Tuple, Optional
 import time
+from config import config
 
-# FastAPI server URL
-API_BASE_URL = "http://127.0.0.1:8000"
+# Validate configuration on startup
+try:
+    config.validate_required_keys()
+    print("✅ Gradio UI configuration validation successful")
+except ValueError as e:
+    print(f"❌ Configuration Error: {e}")
+    exit(1)
+
+# FastAPI server URL from config
+API_BASE_URL = config.get_api_base_url()
 
 def load_sessions():
     """Load list of available sessions from server"""
@@ -428,7 +437,7 @@ if __name__ == "__main__":
         response = requests.get(API_BASE_URL, timeout=5)
         if response.status_code == 200:
             print("FastAPI server is running! Starting Gradio UI...")
-            app.launch(server_name="127.0.0.1", server_port=7860, share=False)
+            app.launch(server_name=config.GRADIO_HOST, server_port=config.GRADIO_PORT, share=False)
         else:
             print(f"⚠️ FastAPI server returned status {response.status_code}. Please make sure it's running correctly.")
     except requests.exceptions.ConnectionError:

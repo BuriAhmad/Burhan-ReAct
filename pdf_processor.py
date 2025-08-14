@@ -3,11 +3,12 @@ import io
 import re
 from typing import List, Dict
 from datetime import datetime
+from config import config
 
 class PDFProcessor:
-    def __init__(self, chunk_size: int = 3500, chunk_overlap: int = 150):
-        self.chunk_size = chunk_size
-        self.chunk_overlap = chunk_overlap
+    def __init__(self, chunk_size: int = None, chunk_overlap: int = None):
+        self.chunk_size = chunk_size or config.CHUNK_SIZE
+        self.chunk_overlap = chunk_overlap or config.CHUNK_OVERLAP
     
     def extract_text_from_pdf(self, file_bytes: bytes) -> str:
         """Extract text from PDF file bytes"""

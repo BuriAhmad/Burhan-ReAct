@@ -1,14 +1,19 @@
 import os
 from tavily import TavilyClient
 import google.generativeai as genai
+from config import config
 
-# API Keys
-GEMINI_API_KEY = "AIzaSyAfBQ_-bI2qhiyhXo2UhWQBCtD--y7rJHs"
-TAVILY_API_KEY = "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"  # Replace with your Tavily API key
+# Validate configuration
+try:
+    config.validate_required_keys()
+    print("✅ Configuration validation successful")
+except ValueError as e:
+    print(f"❌ Configuration Error: {e}")
+    exit(1)
 
-# Configure APIs
-genai.configure(api_key=GEMINI_API_KEY)
-tavily_client = TavilyClient(api_key=TAVILY_API_KEY)
+# Configure APIs using config
+genai.configure(api_key=config.GEMINI_API_KEY)
+tavily_client = TavilyClient(api_key=config.TAVILY_API_KEY)
 
 def rag_search_and_generate(query, max_results=3):
     """

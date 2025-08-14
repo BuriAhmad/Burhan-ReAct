@@ -2,13 +2,31 @@ import subprocess
 import time
 import sys
 import os
+from config import config
+
+def validate_configuration():
+    """Validate configuration before starting servers"""
+    try:
+        config.validate_required_keys()
+        print("✅ Configuration validation successful")
+        config.print_config_summary()
+        return True
+    except ValueError as e:
+        print(f"❌ Configuration Error: {e}")
+        print("\nPlease:")
+        print("1. Create a .env file in the project directory")
+        print("2. Copy the contents from .env.example")
+        print("3. Replace the placeholder values with your actual API keys")
+        return False
 
 def run_fastapi_server():
-    """Start FastAPI server"""
+    """Start FastAPI server using config values"""
     print("🚀 Starting FastAPI server...")
     return subprocess.Popen([
         sys.executable, "-m", "uvicorn", "main:app", 
-        "--host", "127.0.0.1", "--port", "8000", "--reload"
+        "--host", config.API_HOST, 
+        "--port", str(config.API_PORT), 
+        "--reload"
     ])
 
 def run_gradio_ui():
@@ -18,6 +36,18 @@ def run_gradio_ui():
 
 if __name__ == "__main__":
     print("🤖 Starting RAG Application with Multi-Session Support...")
+    print("=" * 50)
+    
+    # Validate configuration first
+    if not validate_configuration():
+        print("\n❌ Cannot start servers due to configuration errors.")
+        print("Please fix the configuration and try again.")
+        sys.exit(1)
+    
+    print("\n" + "=" * 50)
+    print("🔧 Starting servers with configuration:")
+    print(f"   FastAPI: http://{config.API_HOST}:{config.API_PORT}")
+    print(f"   Gradio UI: http://{config.GRADIO_HOST}:{config.GRADIO_PORT}")
     print("=" * 50)
     
     # Start FastAPI server
@@ -32,13 +62,15 @@ if __name__ == "__main__":
     
     print("\n" + "=" * 50)
     print("✅ Both servers are starting up!")
-    print("📍 FastAPI Server: http://127.0.0.1:8000")
-    print("📍 Gradio UI: http://127.0.0.1:7860")
+    print(f"📍 FastAPI Server: http://{config.API_HOST}:{config.API_PORT}")
+    print(f"📍 Gradio UI: http://{config.GRADIO_HOST}:{config.GRADIO_PORT}")
     print("\n🎯 Features:")
     print("  • Multiple independent chat sessions")
     print("  • Persistent history for each session")
-    print("  • Context-aware responses (last 5 exchanges)")
+    print(f"  • Context-aware responses (last {config.CHAT_HISTORY_LIMIT} exchanges)")
     print("  • Session management (create/switch/delete)")
+    print("  • PDF document upload and processing")
+    print("  • Web search integration with Tavily")
     print("\nPress Ctrl+C to stop both servers")
     print("=" * 50)
     

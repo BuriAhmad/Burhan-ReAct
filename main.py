@@ -6,16 +6,20 @@ from rag_pipeline import RAGPipeline
 from pdf_processor import PDFProcessor
 from vector_store import VectorStore
 from chat_history import ChatHistory
+from config import config
 from typing import List, Tuple, Optional
 
-# Configure Gemini API
-GEMINI_API_KEY = "AIzaSyAfBQ_-bI2qhiyhXo2UhWQBCtD--y7rJHs"
-TAVILY_API_KEY = "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"
-genai.configure(api_key=GEMINI_API_KEY)
+# Validate configuration on startup
+try:
+    config.validate_required_keys()
+    print("✅ Configuration validation successful")
+    config.print_config_summary()
+except ValueError as e:
+    print(f"❌ Configuration Error: {e}")
+    exit(1)
 
-# MongoDB Configuration
-MONGODB_URI = "mongodb+srv://buri:buri_password@cluster0.gtzff0e.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
-DATABASE_NAME = "your_database_name"
+# Configure Gemini API
+genai.configure(api_key=config.GEMINI_API_KEY)
 
 # Initialize FastAPI app
 app = FastAPI(title="RAG Server", description="FastAPI server with RAG functionality using MongoDB and Gemini API")
@@ -24,14 +28,14 @@ app = FastAPI(title="RAG Server", description="FastAPI server with RAG functiona
 model = genai.GenerativeModel('gemini-2.0-flash')
 
 # Initialize RAG pipeline
-rag_pipeline = RAGPipeline(model, tavily_api_key=TAVILY_API_KEY)
+rag_pipeline = RAGPipeline(model, tavily_api_key=config.TAVILY_API_KEY)
 
 # Initialize PDF processor and vector store
 pdf_processor = PDFProcessor()
 vector_store = VectorStore()
 
 # Initialize Chat History Manager
-chat_history = ChatHistory(MONGODB_URI, DATABASE_NAME)
+chat_history = ChatHistory(config.MONGODB_URI, config.DATABASE_NAME)
 
 # Request/Response models
 class QueryRequest(BaseModel):
@@ -187,7 +191,7 @@ async def chat_with_rag(request: QueryRequest):
             raise HTTPException(status_code=400, detail="Session ID is required")
         
         # Get chat history context for this session
-        history_context = chat_history.format_history_for_context(request.session_id, limit=5)
+        history_context = chat_history.format_history_for_context(request.session_id, limit=config.CHAT_HISTORY_LIMIT)
         
         # Run RAG pipeline with history context
         result = rag_pipeline.run(request.message, chat_history_context=history_context)
@@ -269,4 +273,4 @@ async def shutdown_event():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="127.0.0.1", port=8000)
+    uvicorn.run(app, host=config.API_HOST, port=config.API_PORT)

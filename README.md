@@ -2,6 +2,62 @@
 
 A FastAPI-based RAG (Retrieval-Augmented Generation) application using MongoDB for document storage, chat history persistence, and Google Gemini for AI responses.
 
+## 🔒 Security & Configuration
+
+### Environment Variables Setup (REQUIRED)
+
+**⚠️ IMPORTANT: Never commit API keys to version control!**
+
+1. **Create your environment file:**
+   ```bash
+   cp .env.example .env
+   ```
+
+2. **Edit `.env` with your actual credentials:**
+   ```bash
+   # API Keys - Replace with your actual keys
+   GEMINI_API_KEY=your_actual_gemini_api_key_here
+   TAVILY_API_KEY=your_actual_tavily_api_key_here
+   
+   # MongoDB Configuration - Replace with your actual connection string
+   MONGODB_URI=your_actual_mongodb_connection_string_here
+   
+   # Database Configuration
+   DATABASE_NAME=knowledge_base
+   COLLECTION_NAME=documents
+   ```
+
+3. **Verify configuration:**
+   ```bash
+   python -c "from config import config; config.print_config_summary()"
+   ```
+
+### Getting API Keys
+
+- **Google Gemini API**: Get your key from [Google AI Studio](https://makersuite.google.com/app/apikey)
+- **Tavily API**: Get your key from [Tavily Dashboard](https://app.tavily.com)
+- **MongoDB Atlas**: Get connection string from [MongoDB Atlas](https://www.mongodb.com/cloud/atlas)
+
+### Configuration Options
+
+All settings can be customized in your `.env` file:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `GEMINI_API_KEY` | - | Google Gemini API key (required) |
+| `TAVILY_API_KEY` | - | Tavily search API key (required) |
+| `MONGODB_URI` | - | MongoDB connection string (required) |
+| `DATABASE_NAME` | `knowledge_base` | MongoDB database name |
+| `COLLECTION_NAME` | `documents` | MongoDB collection for documents |
+| `API_HOST` | `127.0.0.1` | FastAPI server host |
+| `API_PORT` | `8000` | FastAPI server port |
+| `GRADIO_HOST` | `127.0.0.1` | Gradio UI host |
+| `GRADIO_PORT` | `7860` | Gradio UI port |
+| `CHUNK_SIZE` | `3500` | PDF text chunk size |
+| `CHUNK_OVERLAP` | `150` | PDF text chunk overlap |
+| `SIMILARITY_SEARCH_LIMIT` | `5` | Number of similar documents to retrieve |
+| `CHAT_HISTORY_LIMIT` | `5` | Number of recent exchanges to maintain as context |
+
 ## Features
 
 - **Persistent Chat History**: Conversations are saved and restored across sessions
@@ -11,6 +67,8 @@ A FastAPI-based RAG (Retrieval-Augmented Generation) application using MongoDB f
 - **PDF Upload**: Upload and process PDF documents for knowledge base
 - **Web Search Integration**: Automatic web search when local documents insufficient
 - **MongoDB Integration**: Connect to MongoDB Atlas for document and chat storage
+- **Multi-Session Support**: Create and manage multiple independent chat sessions
+- **Secure Configuration**: Environment-based configuration with no hardcoded secrets
 
 ## Setup
 
@@ -20,32 +78,38 @@ A FastAPI-based RAG (Retrieval-Augmented Generation) application using MongoDB f
 pip install -r requirements.txt
 ```
 
-### 2. MongoDB Configuration
+### 2. Configure Environment Variables
+
+Follow the [Security & Configuration](#-security--configuration) section above.
+
+### 3. MongoDB Configuration
 
 The chat history is stored in MongoDB with the following structure:
-- Database: `your_database_name`
+- Database: Configurable via `DATABASE_NAME` (default: `knowledge_base`)
 - Collection: `simple_chats`
 - Schema:
 ```json
 {
-  "_id": "default_session",
+  "_id": "session_name_123",
+  "display_name": "session_name",
   "messages": [
     ["user message 1", "assistant response 1"],
     ["user message 2", "assistant response 2"]
   ],
   "created_at": "2024-01-01T00:00:00",
-  "last_updated": "2024-01-01T00:00:00"
+  "last_updated": "2024-01-01T00:00:00",
+  "message_count": 2
 }
 ```
 
-### 3. Start the Application
+### 4. Start the Application
 
-Run both servers using the provided script:
+**Option 1: Use the startup script (recommended):**
 ```bash
 python run_servers.py
 ```
 
-Or start them individually:
+**Option 2: Start manually:**
 ```bash
 # Terminal 1 - Start FastAPI server
 uvicorn main:app --host 127.0.0.1 --port 8000 --reload
@@ -56,8 +120,14 @@ python gradio_ui.py
 
 ## Usage
 
+### First Time Setup
+1. Create your `.env` file with your API keys
+2. Run `python run_servers.py`
+3. Open the Gradio UI (default: http://127.0.0.1:7860)
+4. Create your first chat session
+
 ### Chat Interface
-1. Open http://127.0.0.1:7860 in your browser
+1. Select an existing session or create a new one
 2. Type messages in the input box and press Enter or click Send
 3. Chat history is automatically saved and will persist across sessions
 4. The bot maintains context of the last 5 exchanges
@@ -67,108 +137,91 @@ python gradio_ui.py
 2. Documents are processed and stored in MongoDB vector store
 3. Future queries will retrieve relevant information from uploaded documents
 
-### Clear History
-- Click the "🗑️ Clear History" button to delete all chat history
-- This removes history from both the UI and database
-
-### Refresh
-- Click the "🔄 Refresh" button to reload chat history from the database
-- Useful if you have multiple sessions or need to sync
+### Session Management
+- **Create**: Use the "Create New" button with a session name
+- **Switch**: Use the dropdown to select different sessions
+- **Delete**: Use the "Delete Session" button to remove a session
+- **Clear History**: Clear messages for the current session only
 
 ## API Endpoints
 
-- `GET /` - Health check
+- `GET /` - Health check and configuration status
+- `POST /create-session` - Create a new chat session
+- `GET /list-sessions` - List all available sessions
+- `DELETE /delete-session/{session_id}` - Delete a specific session
 - `POST /chat` - Main chat endpoint with RAG and history
-- `GET /chat-history` - Retrieve full chat history
-- `DELETE /chat-history` - Clear chat history
+- `GET /chat-history/{session_id}` - Retrieve chat history for a session
+- `DELETE /chat-history/{session_id}` - Clear chat history for a session
+- `GET /session-info/{session_id}` - Get session metadata
 - `POST /upload-pdf` - Upload and process PDF documents
-- `POST /chat-simple` - Direct Gemini chat without RAG
 
-## Architecture
+## Security Best Practices
 
-### Components
-1. **FastAPI Backend** (`main.py`)
-   - Handles HTTP requests
-   - Manages chat sessions
-   - Coordinates RAG pipeline
+1. **Never commit `.env` files** - Already configured in `.gitignore`
+2. **Use strong, unique API keys** - Regenerate keys if compromised
+3. **Restrict MongoDB access** - Use MongoDB Atlas IP whitelist
+4. **Regular key rotation** - Update API keys periodically
+5. **Monitor API usage** - Watch for unusual activity
+6. **Backup your data** - Regular MongoDB backups
 
-2. **Chat History Manager** (`chat_history.py`)
-   - MongoDB operations for chat storage
-   - Session management
-   - History formatting for context
+## Migration from Single-Session
 
-3. **RAG Pipeline** (`rag_pipeline.py`)
-   - Document retrieval from vector store
-   - LLM-based sufficiency evaluation
-   - Web search integration
-   - Context-aware response generation
+If you have existing chat data from an older version:
 
-4. **Gradio UI** (`gradio_ui.py`)
-   - Two-way chat interface
-   - Real-time message display
-   - PDF upload interface
-   - History management controls
+```bash
+python migrate.py
+```
 
-5. **Vector Store** (`vector_store.py`)
-   - MongoDB vector search
-   - Document embedding generation
-   - Similarity search
-
-6. **PDF Processor** (`pdf_processor.py`)
-   - PDF text extraction
-   - Document chunking
-   - Metadata management
-
-## Configuration
-
-### Environment Variables
-Update these in the respective files:
-- `GEMINI_API_KEY`: Google Gemini API key
-- `TAVILY_API_KEY`: Tavily search API key
-- `MONGODB_URI`: MongoDB connection string
-- `DATABASE_NAME`: MongoDB database name
-
-### Session Management
-- Currently uses a fixed session ID: `default_session`
-- Future enhancement: Multi-user session support
-
-## Features in Detail
-
-### Context Preservation
-- The bot remembers the last 5 exchanges (10 messages total)
-- Context is included in every query to maintain conversation flow
-- References previous discussions when relevant
-
-### Intelligent Document Retrieval
-- LLM evaluates if local documents are sufficient
-- Automatically searches web if more information needed
-- Combines local and web sources for comprehensive answers
-
-### Persistence
-- Chat history survives application restarts
-- Automatically loads previous conversation on startup
-- No data loss when closing the application
+This will convert your old `default_session` data to the new multi-session format.
 
 ## Troubleshooting
 
-### MongoDB Connection Issues
-- Verify MongoDB URI is correct
-- Check network connectivity
-- Ensure database and collection exist
+### Configuration Issues
+```bash
+# Check configuration status
+python -c "from config import config; config.print_config_summary()"
 
-### Chat History Not Loading
-- Check MongoDB connection
-- Verify `simple_chats` collection exists
-- Use Refresh button to reload
+# Test specific components
+python config.py
+```
+
+### Missing API Keys
+- Error: `Configuration Error: Missing required environment variables`
+- Solution: Ensure all required variables are set in your `.env` file
+
+### MongoDB Connection Issues
+- Verify MongoDB URI in `.env` file
+- Check network connectivity and IP whitelist
+- Ensure database and collection permissions
 
 ### Server Connection Errors
-- Ensure FastAPI server is running on port 8000
-- Check no other services are using the ports
+- Verify no other services are using the configured ports
+- Check firewall settings
 - Wait for servers to fully start before using
 
+## File Structure
+
+```
+├── .env                 # Your environment variables (create this)
+├── .env.example         # Template for environment variables
+├── .gitignore          # Git ignore file (includes .env)
+├── config.py           # Configuration management
+├── main.py             # FastAPI server
+├── gradio_ui.py        # Gradio user interface
+├── rag_pipeline.py     # RAG pipeline logic
+├── vector_store.py     # MongoDB vector operations
+├── chat_history.py     # Chat session management
+├── pdf_processor.py    # PDF processing utilities
+├── run_servers.py      # Server startup script
+├── migrate.py          # Migration utility
+├── requirements.txt    # Python dependencies
+└── test_*.py          # Test scripts
+```
+
 ## Future Enhancements
-- Multi-user session support with unique session IDs
 - User authentication and authorization
 - Export chat history functionality
 - Advanced search within chat history
 - Conversation summarization for long chats
+- Role-based access control
+- API rate limiting and usage analytics

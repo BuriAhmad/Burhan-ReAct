@@ -2,33 +2,30 @@ from pymongo import MongoClient
 from sentence_transformers import SentenceTransformer
 import numpy as np
 from typing import List, Dict
-
-# Configuration
-MONGODB_URI = "mongodb+srv://buri:buri_password@cluster0.gtzff0e.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
-DATABASE_NAME = "your_database_name"  
-COLLECTION_NAME = "your_collection_name"  
-EMBEDDING_FIELD_NAME = "embedding"
-EMBEDDING_MODEL_NAME = "thenlper/gte-small"
+from config import config
 
 class VectorStore:
     def __init__(self):
-        self.client = MongoClient(MONGODB_URI)
-        self.db = self.client[DATABASE_NAME]
-        self.collection = self.db[COLLECTION_NAME]
-        self.embedding_model = SentenceTransformer(EMBEDDING_MODEL_NAME)
+        self.client = MongoClient(config.MONGODB_URI)
+        self.db = self.client[config.DATABASE_NAME]
+        self.collection = self.db[config.COLLECTION_NAME]
+        self.embedding_model = SentenceTransformer(config.EMBEDDING_MODEL_NAME)
     
     def generate_embedding(self, text: str) -> List[float]:
         """Generate embedding for given text"""
         embedding = self.embedding_model.encode(text)
         return embedding.tolist()
     
-    def vector_search(self, query_embedding: List[float], k: int = 5) -> List[Dict]:
+    def vector_search(self, query_embedding: List[float], k: int = None) -> List[Dict]:
         """Perform vector search in MongoDB"""
+        if k is None:
+            k = config.SIMILARITY_SEARCH_LIMIT
+            
         pipeline = [
             {
                 "$vectorSearch": {
                     "index": "vector_index",  # Make sure this matches your index name
-                    "path": EMBEDDING_FIELD_NAME,
+                    "path": config.EMBEDDING_FIELD_NAME,
                     "queryVector": query_embedding,
                     "numCandidates": k * 2,
                     "limit": k
@@ -42,12 +39,13 @@ class VectorStore:
                 }
             }
         ]
-        #print(pipeline)
         results = list(self.collection.aggregate(pipeline))
         return results
     
-    def similarity_search(self, query: str, k: int = 5) -> List[Dict]:
+    def similarity_search(self, query: str, k: int = None) -> List[Dict]:
         """Generate embedding for query and perform similarity search"""
+        if k is None:
+            k = config.SIMILARITY_SEARCH_LIMIT
         query_embedding = self.generate_embedding(query)
         return self.vector_search(query_embedding, k)
     
@@ -63,7 +61,7 @@ class VectorStore:
                 # Create document for MongoDB
                 document = {
                     'content': chunk['content'],
-                    'embedding': embedding,
+                    config.EMBEDDING_FIELD_NAME: embedding,
                     'metadata': {
                         'source_file': chunk.get('source_file'),
                         'page_number': chunk.get('page_number'),

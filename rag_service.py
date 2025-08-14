@@ -1,6 +1,7 @@
 from typing import List, Dict, Any
 import json
 from mongodb_service import MongoDBService
+from config import config
 
 class RAGService:
     def __init__(self, mongodb_service: MongoDBService):
@@ -53,13 +54,18 @@ INSTRUCTIONS:
     
     def retrieve_and_augment(self, 
                            question: str,
-                           collection_name: str,
-                           database_name: str = "knowledge_base",
-                           limit: int = 5,
+                           collection_name: str = None,
+                           database_name: str = None,
+                           limit: int = None,
                            search_fields: List[str] = None) -> str:
         """
         Retrieve relevant documents and create augmented prompt
         """
+        # Use config defaults if not provided
+        database_name = database_name or config.DATABASE_NAME
+        collection_name = collection_name or config.COLLECTION_NAME
+        limit = limit or config.SIMILARITY_SEARCH_LIMIT
+        
         # Set database
         self.mongodb_service.set_database(database_name)
         
@@ -89,6 +95,8 @@ INSTRUCTIONS:
             # You might want to set a default database first
             databases = self.mongodb_service.client.list_database_names()
             info["databases"] = databases
+            info["current_database"] = config.DATABASE_NAME
+            info["current_collection"] = config.COLLECTION_NAME
             
             # For each database, get collections (limiting to avoid too much data)
             for db_name in databases[:5]:  # Limit to first 5 databases

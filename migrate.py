@@ -6,10 +6,7 @@ Run this if you have existing chat data from the old single-session system
 from pymongo import MongoClient
 from datetime import datetime
 import sys
-
-# MongoDB Configuration
-MONGODB_URI = "mongodb+srv://buri:buri_password@cluster0.gtzff0e.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
-DATABASE_NAME = "your_database_name"
+from config import config
 
 def migrate_single_to_multi_session():
     """Migrate from single session to multi-session format"""
@@ -19,9 +16,13 @@ def migrate_single_to_multi_session():
     print("=" * 60)
     
     try:
-        # Connect to MongoDB
-        client = MongoClient(MONGODB_URI)
-        db = client[DATABASE_NAME]
+        # Validate configuration
+        config.validate_required_keys()
+        print("✅ Configuration validation successful")
+        
+        # Connect to MongoDB using config
+        client = MongoClient(config.MONGODB_URI)
+        db = client[config.DATABASE_NAME]
         collection = db["simple_chats"]
         
         # Check for old single-session data
@@ -108,6 +109,10 @@ def migrate_single_to_multi_session():
         # Close connection
         client.close()
         
+    except ValueError as e:
+        print(f"\n❌ Configuration Error: {e}")
+        print("Please check your .env file and ensure all required variables are set.")
+        sys.exit(1)
     except Exception as e:
         print(f"\n❌ Migration failed: {str(e)}")
         print("Please check your MongoDB connection and try again.")
@@ -118,8 +123,11 @@ def check_data_format():
     print("\nChecking data format...")
     
     try:
-        client = MongoClient(MONGODB_URI)
-        db = client[DATABASE_NAME]
+        # Validate configuration
+        config.validate_required_keys()
+        
+        client = MongoClient(config.MONGODB_URI)
+        db = client[config.DATABASE_NAME]
         collection = db["simple_chats"]
         
         # Get all sessions
@@ -138,11 +146,16 @@ def check_data_format():
         
         client.close()
         
+    except ValueError as e:
+        print(f"❌ Configuration Error: {e}")
+        print("Please check your .env file and ensure all required variables are set.")
     except Exception as e:
         print(f"Error checking data: {str(e)}")
 
 if __name__ == "__main__":
     print("Multi-Session Migration Tool")
+    print(f"Using Database: {config.DATABASE_NAME}")
+    print(f"MongoDB Connection: {'✅ Configured' if config.MONGODB_URI else '❌ Missing'}")
     print("-" * 30)
     print("1. Migrate old data")
     print("2. Check data format")
