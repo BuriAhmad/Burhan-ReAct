@@ -1,9 +1,14 @@
 import gradio as gr
 import requests
 import json
-from typing import List, Tuple, Optional
+from typing import List, Tuple, Optional, Dict
 import time
 from config import config
+import logging
+
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Validate configuration on startup
 try:
@@ -18,129 +23,177 @@ API_BASE_URL = config.get_api_base_url()
 
 def load_sessions():
     """Load list of available sessions from server"""
+    logger.info("Loading sessions from server...")
+    
+    try:
+        response = requests.get(f"{API_BASE_URL}/list-sessions", timeout=10)
+        logger.info(f"Server response status: {response.status_code}")
+        
+        if response.status_code == 200:
+            result = response.json()
+            sessions = result.get("sessions", [])
+            logger.info(f"Received {len(sessions)} sessions from server")
+            
+            # Create simple session ID list for dropdown
+            session_ids = []
+            for s in sessions:
+                session_ids.append(s['session_id'])
+                logger.debug(f"Session: {s['session_id']} - {s['display_name']} ({s['message_count']} msgs)")
+            
+            logger.info(f"✅ Loaded {len(session_ids)} sessions")
+            return session_ids
+        else:
+            logger.error(f"❌ Error loading sessions: {response.status_code}")
+            return []
+            
+    except Exception as e:
+        logger.error(f"❌ Error loading sessions: {str(e)}")
+        return []
+
+def get_session_display_info(session_id: str) -> str:
+    """Get display information for a session"""
+    if not session_id:
+        return "No session selected"
+    
     try:
         response = requests.get(f"{API_BASE_URL}/list-sessions", timeout=10)
         if response.status_code == 200:
             result = response.json()
             sessions = result.get("sessions", [])
-            
-            # Create choices for dropdown as a dictionary (better format for Gradio)
-            choices = {}
             for s in sessions:
-                display_text = f"{s['display_name']} ({s['message_count']} msgs)"
-                choices[display_text] = s['session_id']
-            
-            print(f"Loaded {len(choices)} sessions")
-            return choices
-        else:
-            print(f"Error loading sessions: {response.status_code}")
-            return {}
-    except Exception as e:
-        print(f"Error loading sessions: {str(e)}")
-        return {}
+                if s['session_id'] == session_id:
+                    return f"{s['display_name']} ({s['message_count']} messages)"
+        return f"Session: {session_id}"
+    except:
+        return f"Session: {session_id}"
 
 def load_chat_history(session_id: str):
     """Load chat history for a specific session"""
     if not session_id:
+        logger.info("No session ID provided, returning empty history")
         return []
     
     try:
-        print(f"Loading chat history for session: {session_id}")
+        logger.info(f"Loading chat history for session: {session_id}")
         response = requests.get(f"{API_BASE_URL}/chat-history/{session_id}", timeout=10)
+        
         if response.status_code == 200:
             result = response.json()
+            chat_history = result.get("chat_history", [])
+            
             # Convert to format expected by Gradio Chatbot
             history = []
-            for user_msg, assistant_msg in result.get("chat_history", []):
+            for user_msg, assistant_msg in chat_history:
                 history.append([user_msg, assistant_msg])
-            print(f"Loaded {len(history)} message exchanges")
+                
+            logger.info(f"✅ Loaded {len(history)} message exchanges for session {session_id}")
             return history
         else:
-            print(f"Error loading chat history: {response.status_code}")
+            logger.error(f"❌ Error loading chat history: {response.status_code}")
             return []
+            
     except Exception as e:
-        print(f"Error loading chat history: {str(e)}")
+        logger.error(f"❌ Error loading chat history: {str(e)}")
         return []
 
 def create_new_session(session_name: str):
     """Create a new chat session"""
     if not session_name or not session_name.strip():
-        return None, None, [], "❌ Please enter a session name"
+        return None, [], "❌ Please enter a session name"
     
     try:
         payload = {"session_name": session_name.strip()}
-        print(f"Creating new session: {session_name}")
+        logger.info(f"Creating new session: {session_name}")
         response = requests.post(f"{API_BASE_URL}/create-session", json=payload, timeout=10)
         
         if response.status_code == 200:
             result = response.json()
             new_session_id = result["session_id"]
-            print(f"Created new session with ID: {new_session_id}")
+            logger.info(f"✅ Created new session with ID: {new_session_id}")
             
             # Reload sessions list
             updated_sessions = load_sessions()
             
-            # Return new session ID both for dropdown and state
-            return updated_sessions, new_session_id, [], f"✅ Created session: {new_session_id}"
+            return (
+                gr.update(choices=updated_sessions, value=new_session_id),  # Update dropdown
+                [],  # Empty chat history
+                f"✅ Created session: {new_session_id}"
+            )
         else:
             error_detail = response.json().get('detail', 'Unknown error')
-            return None, None, [], f"❌ Failed to create session: {error_detail}"
+            logger.error(f"❌ Failed to create session: {error_detail}")
+            return gr.update(), [], f"❌ Failed to create session: {error_detail}"
+            
     except Exception as e:
-        return None, None, [], f"❌ Error creating session: {str(e)}"
+        logger.error(f"❌ Error creating session: {str(e)}")
+        return gr.update(), [], f"❌ Error creating session: {str(e)}"
 
-def delete_current_session(session_id: str):
+def delete_current_session(current_session_id: str):
     """Delete the currently selected session"""
-    if not session_id:
-        return None, None, [], "❌ No session selected to delete"
+    if not current_session_id:
+        return gr.update(), [], "❌ No session selected to delete"
     
     try:
-        print(f"Deleting session: {session_id}")
-        response = requests.delete(f"{API_BASE_URL}/delete-session/{session_id}", timeout=10)
+        logger.info(f"Deleting session: {current_session_id}")
+        response = requests.delete(f"{API_BASE_URL}/delete-session/{current_session_id}", timeout=10)
         
         if response.status_code == 200:
-            print(f"Successfully deleted session: {session_id}")
-            # Reload sessions and clear selection
+            logger.info(f"✅ Successfully deleted session: {current_session_id}")
+            
+            # Reload sessions
             updated_sessions = load_sessions()
-            return updated_sessions, None, [], f"✅ Deleted session: {session_id}"
+            
+            # Select first session if available
+            new_selection = updated_sessions[0] if updated_sessions else None
+            
+            return (
+                gr.update(choices=updated_sessions, value=new_selection),
+                load_chat_history(new_selection) if new_selection else [],
+                f"✅ Deleted session: {current_session_id}"
+            )
         else:
-            print(f"Failed to delete session: {response.status_code}")
-            return load_sessions(), session_id, load_chat_history(session_id), "❌ Failed to delete session"
+            logger.error(f"❌ Failed to delete session: {response.status_code}")
+            return gr.update(), [], "❌ Failed to delete session"
+            
     except Exception as e:
-        print(f"Error deleting session: {str(e)}")
-        return load_sessions(), session_id, load_chat_history(session_id), f"❌ Error deleting session: {str(e)}"
+        logger.error(f"❌ Error deleting session: {str(e)}")
+        return gr.update(), [], f"❌ Error deleting session: {str(e)}"
 
 def on_session_change(session_id: str):
     """Handle session selection change"""
-    print(f"Session changed to: {session_id}")
+    logger.info(f"Session changed to: '{session_id}'")
     
     if not session_id:
+        logger.info("No session selected")
         return [], "No session selected", ""
     
     history = load_chat_history(session_id)
-    return history, f"Session: {session_id}", ""
+    display_info = get_session_display_info(session_id)
+    return history, display_info, ""
 
-def send_message(message: str, chat_history: List, session_id: str):
+def send_message(message: str, chat_history: List, current_session_id: str):
     """Send message to FastAPI server and update chat history"""
     if not message or not message.strip():
         return "", chat_history, "❌ Please enter a message"
     
-    if not session_id:
+    if not current_session_id:
         return "", chat_history, "❌ Please select or create a session first"
     
     try:
         # Send chat request with session_id
         payload = {
             "message": message.strip(),
-            "session_id": session_id
+            "session_id": current_session_id
         }
-        print(f"Sending message to session {session_id}: {message[:50]}...")
+        logger.info(f"Sending message to session {current_session_id}: {message[:50]}...")
         
         response = requests.post(f"{API_BASE_URL}/chat", json=payload, timeout=30)
-        print(f"Response status: {response.status_code}")
+        logger.info(f"Response status: {response.status_code}")
         
         if response.status_code == 200:
             result = response.json()
-            print("Successfully received response")
+            logger.info("✅ Successfully received response")
+            
             # Update chat history with new exchange
             new_history = []
             for user_msg, assistant_msg in result.get("chat_history", []):
@@ -153,36 +206,38 @@ def send_message(message: str, chat_history: List, session_id: str):
                 error_msg = f"❌ Error: {response.status_code} - {error_detail}"
             except:
                 error_msg = f"❌ Error: {response.status_code}"
-            print(f"Error response: {error_msg}")
+            logger.error(f"Error response: {error_msg}")
             return message, chat_history, error_msg
             
     except requests.exceptions.ConnectionError:
-        print("Connection error when sending message")
+        logger.error("Connection error when sending message")
         return message, chat_history, "❌ Cannot connect to server"
     except requests.exceptions.Timeout:
-        print("Timeout when sending message")
+        logger.error("Timeout when sending message")
         return message, chat_history, "❌ Request timed out"
     except Exception as e:
-        print(f"Error sending message: {str(e)}")
+        logger.error(f"Error sending message: {str(e)}")
         return message, chat_history, f"❌ Error: {str(e)}"
 
-def clear_session_history(session_id: str):
+def clear_session_history(current_session_id: str):
     """Clear chat history for the current session"""
-    if not session_id:
+    if not current_session_id:
         return [], "❌ No session selected"
     
     try:
-        print(f"Clearing history for session: {session_id}")
-        response = requests.delete(f"{API_BASE_URL}/chat-history/{session_id}", timeout=10)
+        logger.info(f"Clearing history for session: {current_session_id}")
+        response = requests.delete(f"{API_BASE_URL}/chat-history/{current_session_id}", timeout=10)
+        
         if response.status_code == 200:
-            print("Successfully cleared history")
-            return [], f"✅ Cleared history for session: {session_id}"
+            logger.info("✅ Successfully cleared history")
+            return [], f"✅ Cleared history for session: {current_session_id}"
         else:
-            print(f"Failed to clear history: {response.status_code}")
-            return load_chat_history(session_id), f"❌ Failed to clear history"
+            logger.error(f"❌ Failed to clear history: {response.status_code}")
+            return load_chat_history(current_session_id), f"❌ Failed to clear history"
+            
     except Exception as e:
-        print(f"Error clearing history: {str(e)}")
-        return load_chat_history(session_id), f"❌ Error: {str(e)}"
+        logger.error(f"❌ Error clearing history: {str(e)}")
+        return load_chat_history(current_session_id), f"❌ Error: {str(e)}"
 
 def upload_pdf_file(file):
     """Upload PDF file to FastAPI server"""
@@ -190,7 +245,7 @@ def upload_pdf_file(file):
         return "❌ Please select a PDF file to upload"
     
     try:
-        print(f"Uploading PDF file: {file.name}")
+        logger.info(f"Uploading PDF file: {file.name}")
         # Prepare file for upload
         files = {"file": (file.name, open(file.name, "rb"), "application/pdf")}
         
@@ -199,15 +254,15 @@ def upload_pdf_file(file):
         
         if response.status_code == 200:
             result = response.json()
-            print("Successfully uploaded PDF")
+            logger.info("✅ Successfully uploaded PDF")
             return f"✅ {result['message']}\n📄 File: {result['filename']}\n📊 Chunks: {result['chunks_created']}\n⏱️ Time: {result['processing_time']}"
         else:
             error_detail = response.json().get('detail', 'Unknown error')
-            print(f"Upload failed: {error_detail}")
+            logger.error(f"❌ Upload failed: {error_detail}")
             return f"❌ Upload failed: {error_detail}"
             
     except Exception as e:
-        print(f"Upload error: {str(e)}")
+        logger.error(f"❌ Upload error: {str(e)}")
         return f"❌ Upload error: {str(e)}"
     finally:
         try:
@@ -215,23 +270,39 @@ def upload_pdf_file(file):
         except:
             pass
 
-def refresh_interface(session_id):
-    """Refresh the entire interface"""
-    print("Refreshing interface")
-    sessions = load_sessions()
+def refresh_sessions(current_session_id: str):
+    """Refresh the session list"""
+    logger.info("Refreshing sessions...")
+    session_ids = load_sessions()
     
-    if session_id and session_id in [s_id for s_id in sessions.values()]:
-        # Session still exists
-        history = load_chat_history(session_id)
-        return sessions, session_id, history, "🔄 Refreshed"
-    
-    if sessions:
-        # Auto-select first session if current one doesn't exist
-        first_session_id = next(iter(sessions.values()))
-        history = load_chat_history(first_session_id)
-        return sessions, first_session_id, history, "🔄 Refreshed - Selected first session"
-    
-    return sessions, None, [], "🔄 Refreshed - No sessions available"
+    # Keep current selection if it still exists
+    if current_session_id in session_ids:
+        history = load_chat_history(current_session_id)
+        display_info = get_session_display_info(current_session_id)
+        return (
+            gr.update(choices=session_ids, value=current_session_id),
+            history,
+            display_info,
+            "🔄 Refreshed"
+        )
+    elif session_ids:
+        # Select first session if current doesn't exist
+        first_session = session_ids[0]
+        history = load_chat_history(first_session)
+        display_info = get_session_display_info(first_session)
+        return (
+            gr.update(choices=session_ids, value=first_session),
+            history,
+            display_info,
+            "🔄 Refreshed - Selected first session"
+        )
+    else:
+        return (
+            gr.update(choices=[], value=None),
+            [],
+            "No sessions available",
+            "🔄 Refreshed - No sessions available"
+        )
 
 # Create Gradio interface
 with gr.Blocks(title="RAG Multi-Session Chat", theme=gr.themes.Soft()) as app:
@@ -239,20 +310,16 @@ with gr.Blocks(title="RAG Multi-Session Chat", theme=gr.themes.Soft()) as app:
     gr.Markdown("# 🤖 RAG Chat Interface - Multi-Session")
     gr.Markdown("Select an existing chat session or create a new one to start")
     
-    # Session state (hidden)
-    session_state = gr.State(value=None)
-    
     # Session Management Section
     with gr.Row():
         with gr.Column(scale=3):
             with gr.Row():
                 session_dropdown = gr.Dropdown(
                     label="Select Session",
-                    choices=load_sessions(),
+                    choices=[],
                     value=None,
                     interactive=True,
-                    scale=2,
-                    allow_custom_value=False
+                    scale=2
                 )
                 refresh_btn = gr.Button("🔄", scale=0, min_width=50)
             
@@ -327,83 +394,55 @@ with gr.Blocks(title="RAG Multi-Session Chat", theme=gr.themes.Soft()) as app:
     
     # Event Handlers
     
-    # Session selection change - FIXED
+    # Session selection change
     session_dropdown.change(
         fn=on_session_change,
         inputs=[session_dropdown],
         outputs=[chatbot, session_info, status_text]
-    ).then(
-        fn=lambda x: x,
-        inputs=[session_dropdown],
-        outputs=[session_state]
     )
     
-    # Create new session - FIXED
+    # Create new session
     create_btn.click(
         fn=create_new_session,
         inputs=[new_session_name],
-        outputs=[session_dropdown, session_dropdown, chatbot, status_text]
+        outputs=[session_dropdown, chatbot, status_text]
     ).then(
         fn=lambda: "",
         outputs=[new_session_name]
-    ).then(
-        fn=lambda x: x,
-        inputs=[session_dropdown],
-        outputs=[session_state]
-    ).then(
-        fn=lambda x: f"Session: {x}" if x else "No session selected",
-        inputs=[session_state],
-        outputs=[session_info]
     )
     
-    # Delete session - FIXED
+    # Delete session
     delete_btn.click(
         fn=delete_current_session,
-        inputs=[session_state],
-        outputs=[session_dropdown, session_dropdown, chatbot, status_text]
-    ).then(
-        fn=lambda x: x,
         inputs=[session_dropdown],
-        outputs=[session_state]
-    ).then(
-        fn=lambda x: f"Session: {x}" if x else "No session selected",
-        inputs=[session_state],
-        outputs=[session_info]
+        outputs=[session_dropdown, chatbot, status_text]
     )
     
-    # Send message - FIXED
+    # Send message
     send_btn.click(
         fn=send_message,
-        inputs=[msg_input, chatbot, session_state],
+        inputs=[msg_input, chatbot, session_dropdown],
         outputs=[msg_input, chatbot, status_text]
     )
     
     msg_input.submit(
         fn=send_message,
-        inputs=[msg_input, chatbot, session_state],
+        inputs=[msg_input, chatbot, session_dropdown],
         outputs=[msg_input, chatbot, status_text]
     )
     
     # Clear current session history
     clear_history_btn.click(
         fn=clear_session_history,
-        inputs=[session_state],
+        inputs=[session_dropdown],
         outputs=[chatbot, status_text]
     )
     
-    # Refresh button - FIXED
+    # Refresh button
     refresh_btn.click(
-        fn=refresh_interface,
-        inputs=[session_state],
-        outputs=[session_dropdown, session_dropdown, chatbot, status_text]
-    ).then(
-        fn=lambda x: x,
+        fn=refresh_sessions,
         inputs=[session_dropdown],
-        outputs=[session_state]
-    ).then(
-        fn=lambda x: f"Session: {x}" if x else "No session selected",
-        inputs=[session_state],
-        outputs=[session_info]
+        outputs=[session_dropdown, chatbot, session_info, status_text]
     )
     
     # Upload PDF
@@ -415,19 +454,27 @@ with gr.Blocks(title="RAG Multi-Session Chat", theme=gr.themes.Soft()) as app:
     
     # Initial load
     def initial_load():
-        sessions = load_sessions()
+        logger.info("Performing initial load...")
+        session_ids = load_sessions()
         
-        if sessions:
+        if session_ids:
             # Auto-select the first session
-            first_session_id = next(iter(sessions.values()))
-            history = load_chat_history(first_session_id)
-            return sessions, first_session_id, history, f"Session: {first_session_id}", first_session_id
+            first_session = session_ids[0]
+            history = load_chat_history(first_session)
+            display_info = get_session_display_info(first_session)
+            logger.info(f"✅ Initial load complete, selected session: {first_session}")
+            return (
+                gr.update(choices=session_ids, value=first_session),
+                history,
+                display_info
+            )
         
-        return {}, None, [], "No sessions available - Create a new one to start", None
+        logger.info("No sessions available on initial load")
+        return gr.update(choices=[], value=None), [], "No sessions available - Create a new one to start"
     
     app.load(
         fn=initial_load,
-        outputs=[session_dropdown, session_dropdown, chatbot, session_info, session_state]
+        outputs=[session_dropdown, chatbot, session_info]
     )
 
 if __name__ == "__main__":

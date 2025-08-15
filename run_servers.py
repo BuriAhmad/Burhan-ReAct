@@ -55,7 +55,7 @@ if __name__ == "__main__":
     
     # Wait a bit for FastAPI to start
     print("⏳ Waiting for FastAPI server to start...")
-    time.sleep(5)
+    time.sleep(25)
     
     # Start Gradio UI
     gradio_process = run_gradio_ui()

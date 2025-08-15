@@ -33,6 +33,19 @@ class Config:
     # RAG Configuration
     SIMILARITY_SEARCH_LIMIT = int(os.getenv("SIMILARITY_SEARCH_LIMIT", "5"))
     CHAT_HISTORY_LIMIT = int(os.getenv("CHAT_HISTORY_LIMIT", "5"))
+
+    ENABLE_QUERY_CLASSIFICATION = os.getenv("ENABLE_QUERY_CLASSIFICATION", "true").lower() == "true"
+    CASUAL_TEMPERATURE = float(os.getenv("CASUAL_TEMPERATURE", "0.7"))
+    HISTORY_TEMPERATURE = float(os.getenv("HISTORY_TEMPERATURE", "0.3"))
+    RETRIEVAL_TEMPERATURE = float(os.getenv("RETRIEVAL_TEMPERATURE", "0.2"))
+    
+    # Enhanced Chat History Configuration (NEW)
+    CHECK_HISTORY_FOR_ANSWERS = os.getenv("CHECK_HISTORY_FOR_ANSWERS", "true").lower() == "true"
+    HISTORY_CONTEXT_FORMAT = os.getenv("HISTORY_CONTEXT_FORMAT", "structured")  # "structured" or "simple"
+    
+    # Debug Configuration (NEW)
+    DEBUG_PIPELINE_DECISIONS = os.getenv("DEBUG_PIPELINE_DECISIONS", "true").lower() == "true"
+    LOG_QUERY_CLASSIFICATION = os.getenv("LOG_QUERY_CLASSIFICATION", "true").lower() == "true"
     
     @classmethod
     def validate_required_keys(cls):
@@ -74,6 +87,17 @@ class Config:
         print(f"Gradio UI: {cls.GRADIO_HOST}:{cls.GRADIO_PORT}")
         print(f"Chunk Size: {cls.CHUNK_SIZE}")
         print(f"Chat History Limit: {cls.CHAT_HISTORY_LIMIT}")
+
+        print("\n--- Enhanced Features ---")
+        print(f"Query Classification: {'✅ Enabled' if cls.ENABLE_QUERY_CLASSIFICATION else '❌ Disabled'}")
+        print(f"History Answer Check: {'✅ Enabled' if cls.CHECK_HISTORY_FOR_ANSWERS else '❌ Disabled'}")
+        print(f"Temperature Settings:")
+        print(f"  - Casual: {cls.CASUAL_TEMPERATURE}")
+        print(f"  - History: {cls.HISTORY_TEMPERATURE}")
+        print(f"  - Retrieval: {cls.RETRIEVAL_TEMPERATURE}")
+        print(f"Debug Pipeline: {'✅ On' if cls.DEBUG_PIPELINE_DECISIONS else '❌ Off'}")
+        
+        print("\n--- API Keys ---")
         print(f"Gemini API Key: {'✅ Set' if cls.GEMINI_API_KEY else '❌ Missing'}")
         print(f"Tavily API Key: {'✅ Set' if cls.TAVILY_API_KEY else '❌ Missing'}")
         print(f"MongoDB URI: {'✅ Set' if cls.MONGODB_URI else '❌ Missing'}")
