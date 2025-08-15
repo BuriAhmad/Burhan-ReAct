@@ -27,7 +27,9 @@ class RAGState(TypedDict):
     query_type: str  # 'casual', 'question_from_history', 'question_needs_retrieval'
     temperature: float  # Dynamic temperature based on query type
     answer_from_history: Optional[str]  # If answer found in history
-    skip_retrieval: bool  # Flag to skip retrieval entirely
+    skip_retrieval: bool  # Flag to skip retrieval 
+    
+    session_id: Optional[str] 
 
 class RAGPipeline:
     def __init__(self, gemini_model, tavily_api_key: str = None):
@@ -324,10 +326,17 @@ Provide a natural, conversational response that directly answers their question:
                 return state
             
             user_query = state["user_query"]
-            retrieved_docs = self.vector_store.similarity_search(user_query, k=5)
+            session_id = state.get("session_id")  # 🔑 Get session_id from state
+            
+            # ✅ Pass session_id to ensure session-scoped retrieval
+            retrieved_docs = self.vector_store.similarity_search(
+                query=user_query, 
+                k=5, 
+                session_id=session_id
+            )
             
             state["local_documents"] = retrieved_docs
-            print(f"DEBUG: Retrieved {len(retrieved_docs)} local documents")
+            print(f"DEBUG: Retrieved {len(retrieved_docs)} local documents for session {session_id}")
             return state
         except Exception as e:
             state["error"] = f"Local retrieval error: {str(e)}"
@@ -530,7 +539,7 @@ Your response:"""
             state["final_response"] = "I encountered an error while generating the response."
             return state
     
-    def run(self, user_query: str, chat_history_context: str = "") -> Dict:
+    def run(self, user_query: str, chat_history_context: str = "", session_id: Optional[str] = None) -> Dict:
         """Run the complete enhanced RAG pipeline"""
         initial_state = {
             # Original fields
@@ -553,7 +562,8 @@ Your response:"""
             "query_type": "",
             "temperature": 0.2,
             "answer_from_history": None,
-            "skip_retrieval": False
+            "skip_retrieval": False,
+            "session_id": session_id
         }
         
         try:

@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, UploadFile, File
+from fastapi import FastAPI, HTTPException, UploadFile, Form, File
 from pydantic import BaseModel
 import google.generativeai as genai
 import os
@@ -193,7 +193,7 @@ async def delete_session(session_id: str):
         raise HTTPException(status_code=500, detail=f"Error deleting session: {str(e)}")
 
 @app.post("/upload-pdf", response_model=UploadResponse)
-async def upload_pdf(file: UploadFile = File(...)):
+async def upload_pdf(session_id: str = Form(...), file: UploadFile = File(...)):
     """Upload and process PDF file"""
     import time
     start_time = time.time()
@@ -201,6 +201,10 @@ async def upload_pdf(file: UploadFile = File(...)):
     logger.info(f"Processing PDF upload: {file.filename}")
     
     try:
+        # Validate session exists
+        if not chat_history.session_exists(session_id):
+            raise HTTPException(status_code=404, detail="Session not found")
+
         # Validate file type
         if not file.filename.lower().endswith('.pdf'):
             logger.warning(f"Invalid file type uploaded: {file.filename}")
@@ -225,12 +229,15 @@ async def upload_pdf(file: UploadFile = File(...)):
         logger.info(f"PDF processed into {len(processing_result['chunks'])} chunks")
         
         # Store chunks in MongoDB
-        storage_result = vector_store.store_pdf_chunks(processing_result['chunks'])
+        storage_result = vector_store.store_pdf_chunks(
+            processing_result['chunks'],
+            session_id=session_id               
+        )
         
         if not storage_result['success']:
             logger.error(f"Database storage failed: {storage_result['error']}")
             raise HTTPException(status_code=500, detail=f"Database error: {storage_result['error']}")
-        
+
         processing_time = f"{time.time() - start_time:.2f} seconds"
         logger.info(f"✅ PDF upload complete in {processing_time}")
         
@@ -250,32 +257,17 @@ async def upload_pdf(file: UploadFile = File(...)):
 
 @app.post("/chat", response_model=ChatResponse)
 async def chat_with_rag(request: QueryRequest):
-    """Enhanced chat endpoint with query classification-style logging (compatible with ChatResponse)"""
     try:
-        # Get chat history context (last N exchanges)
         history_context = chat_history.format_history_for_context(
             request.session_id,
             limit=config.CHAT_HISTORY_LIMIT
         )
 
-        print("\n" + "="*60)
-        print(f"📝 New Query from session '{request.session_id}':")
-        print(f"   Query: '{request.message[:100]}...'")
-        print(f"   History context length: {len(history_context)} chars")
-
-        # Run RAG pipeline
         result = rag_pipeline.run(
             user_query=request.message,
-            chat_history_context=history_context
+            chat_history_context=history_context,
+            session_id=request.session_id   # 🔒 scope
         )
-
-        print("\n🤖 Pipeline Analysis:")
-        print(f"   Query Type: {result.get('query_type', 'unknown')}")
-        print(f"   Temperature: {result.get('temperature', 0.2)}")
-        print(f"   Answered from History: {result.get('answered_from_history', False)}")
-        print(f"   Retrieved Docs: {result.get('retrieved_docs_count', 0)}")
-        print(f"   Web Search Used: {result.get('web_search_used', False)}")
-        print(f"   Status: {result['status']}")
 
         response_text = result["response"]
 
@@ -285,26 +277,19 @@ async def chat_with_rag(request: QueryRequest):
             assistant_response=response_text,
             session_id=request.session_id
         )
-        if not save_ok:
-            print("   ⚠️ Warning: Failed to save to chat history")
 
-        # IMPORTANT: your UI expects the full history list here
         updated_history = chat_history.get_full_history(request.session_id)
 
-        print("="*60 + "\n")
-
-        # Return exactly what ChatResponse defines; extra metadata is fine to log, but not returned
         return ChatResponse(
             response=response_text,
-            status=result["status"],
+            status=result.get("status", "ok"),
             chat_history=updated_history,
             retrieved_docs_count=result.get("retrieved_docs_count", 0),
             session_id=request.session_id
         )
-
     except Exception as e:
-        print(f"❌ Chat endpoint error: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.get("/chat-history/{session_id}", response_model=ChatHistoryResponse)
 async def get_chat_history(session_id: str):
@@ -337,21 +322,31 @@ async def clear_chat_history(session_id: str):
     
     try:
         if not chat_history.session_exists(session_id):
-            logger.warning(f"Session {session_id} not found for history clearing")
             raise HTTPException(status_code=404, detail="Session not found")
-        
-        success = chat_history.clear_history(session_id)
-        if success:
-            logger.info(f"✅ Cleared history for session {session_id}")
-            return {"status": "success", "message": f"Chat history cleared for session {session_id}"}
-        else:
-            logger.error(f"Failed to clear history for session {session_id}")
-            return {"status": "error", "message": "Failed to clear chat history"}
+
+        success = chat_history.delete_session(session_id)
+        if not success:
+            return {"status": "error", "message": "Session could not be deleted"}
+
+        # NEW: delete vector docs belonging to this session
+        purge = vector_store.delete_session_documents(session_id)
+        if not purge.get("success", False):
+            # Non-fatal; session is gone but docs purge failed
+            logger.error(f"Document purge failed for {session_id}: {purge.get('error')}")
+            return {
+                "status": "warning",
+                "message": f"Session deleted, but document purge failed: {purge.get('error')}"
+            }
+
+        return {
+            "status": "success",
+            "message": f"Session {session_id} deleted; purged {purge.get('deleted_count', 0)} documents"
+        }
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error clearing chat history for {session_id}: {e}")
-        raise HTTPException(status_code=500, detail=f"Error clearing chat history: {str(e)}")
+        logger.error(f"Error deleting session {session_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Error deleting session: {str(e)}")
 
 @app.get("/session-info/{session_id}")
 async def get_session_info(session_id: str):

@@ -46,6 +46,8 @@ class Config:
     # Debug Configuration (NEW)
     DEBUG_PIPELINE_DECISIONS = os.getenv("DEBUG_PIPELINE_DECISIONS", "true").lower() == "true"
     LOG_QUERY_CLASSIFICATION = os.getenv("LOG_QUERY_CLASSIFICATION", "true").lower() == "true"
+
+    VECTOR_INDEX_NAME = os.getenv("VECTOR_INDEX_NAME", "vector_search")
     
     @classmethod
     def validate_required_keys(cls):
